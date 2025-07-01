@@ -141,7 +141,7 @@ for (student_pdfs_path in student_pdfs_paths) {
     lines_to_write <- sapply(student_results$results_by_page, function(page_result) {
       # Also print a summary to the console for a quick overview
       cat(sprintf(
-        "Page %d: Name: %s, ID: %s, Score: %d / %d\n",
+        "Page %d: Name: %s, ID: %s, Score: %f / %d\n",
         page_result$page_number,
         page_result$student_details$student_name,
         page_result$student_details$student_id,
