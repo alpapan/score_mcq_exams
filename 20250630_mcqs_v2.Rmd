@@ -97,7 +97,16 @@ student_details_region <-
 source("omr_functions.R")
 
 score_output_tsv <- "mcq_scores.tsv"
-
+if (file.exists(score_output_tsv)) {
+  prompt <- sprintf("Delete existing '%s'? (y/n): ", score_output_tsv)
+  answer <- readline(prompt)
+  if (tolower(answer) == "y") {
+    file.remove(score_output_tsv)
+    print("✅ File deleted.")
+  } else {
+    print("File not deleted.")
+  }
+}
 
 grid_params <- run_calibration(
   blank_template_path = blank_template_path,
@@ -116,11 +125,11 @@ for (student_pdfs_path in student_pdfs_paths) {
     blank_template_path = blank_template_path,
     correct_answers_df = correct_answers_df,
     grid_params = grid_params,
-    debug = TRUE,
+    debug = FALSE,
     density = DENSITY,
     name_region = NAME_REGION,
     id_region = ID_REGION,
-    partial_credit_mca = TRUE, max_debug_q = 25
+    partial_credit_mca = TRUE, max_debug_q = 1
   )
 
 
