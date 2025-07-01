@@ -1,0 +1,165 @@
+---
+title: "Parse mcqs"
+author: "Alexie"
+date: "2025-06-26"
+output: html_document
+---
+
+```{r setup, include=FALSE, echo=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(styler)
+
+Sys.setenv(MAGICK_MEMORY_LIMIT = "2GB")
+Sys.setenv(MAGICK_MAP_LIMIT = "4GB")
+Sys.setenv(MAGICK_DISK_LIMIT = "8GB")
+# system("convert -list resource")
+
+blank_template_path <- "analysis/MCQ_Answer_Sheet_Scan_Blank.pdf"
+correct_answers_path <- "analysis/MCQ_Answer_Sheet_Scan_CorrectAnswers.pdf"
+# student_pdfs_paths <- c("analysis/MCQ_Answer_Sheet_Scan_STUDENT_EXAMPLE2.pdf")
+student_pdfs_paths <-
+  c(
+    "analysis/MCQ_1.pdf",
+    "analysis/MCQ_5.pdf",
+    "analysis/MCQ_4.pdf",
+    "analysis/MCQ_3.pdf",
+    "analysis/MCQ_2.pdf"
+  )
+# student_pdfs_paths <- c("analysis/Failed_read.pdf")
+
+correct_answers_df <- data.frame(
+  question = 1:25,
+  answer = c(
+    "E", "C", "B", "E", "B", "A", "A", "A", "C", "C", "C", "E",
+    "AC", "AB", "AB", "BC", "BC", "BC", "BC", "AB", "AB", "ABC", "ABC", "AC", "AB"
+  )
+)
+
+PART_A_QUESTIONS <- 1:12
+PART_A_OPTIONS <- 5
+PART_B_QUESTIONS <- 13:25
+PART_B_OPTIONS <- 4
+EXPECTED_BUBBLE_COUNT <- length(PART_A_QUESTIONS) * PART_A_OPTIONS +
+  length(PART_B_QUESTIONS) * PART_B_OPTIONS
+TOTAL_QUESTIONS <- length(PART_A_QUESTIONS) + length(PART_B_QUESTIONS)
+
+DENSITY <- 200
+BW_THRESHOLD <- 60
+# Define regions for student name and ID extraction
+NAME_REGION <- c(x = 265, y = 300, width = 425, height = 75)
+ID_REGION <- c(x = 880, y = 300, width = 325, height = 75)
+
+source("ocr_functions.R")
+source("omr_functions.R")
+```
+
+```{r debug find student details, echo=FALSE}
+
+# source("ocr_functions.R")
+
+# we've done this already.
+# finding_region <- find_region(correct_answers_path,test_regions = data.frame(
+#   x = c(265, 880),
+#   y = c(300, 300),
+#   width = c(425, 325),
+#   height = c(75, 75),
+#   label = c("Name", "ID")
+# ), density = DENSITY)
+
+#
+# then set these in setup
+#e.g
+# NAME_REGION <- c(x = 265, y = 300, width = 425, height = 75)
+# ID_REGION   <- c(x = 880, y = 300, width = 325, height = 75)
+
+```
+
+```{r get student details example, echo=FALSE}
+
+source("ocr_functions.R")
+
+student_details_region <-
+  extract_student_info(
+    correct_answers_path,
+    debug = TRUE,
+    name_region = NAME_REGION,
+    id_region = ID_REGION,
+    density = DENSITY,
+    show_regions = TRUE
+  )
+
+
+
+```
+
+```{r test step 2, echo=FALSE}
+source("omr_functions.R")
+
+score_output_tsv <- "mcq_scores.tsv"
+
+
+grid_params <- run_calibration(
+  blank_template_path = blank_template_path,
+  grid_param_file = "analysis/grid_parameters.rds",
+  density = DENSITY
+)
+
+cat("=== Running OMR on correct answers ===\n")
+correct_results <- process_bubble_sheet_omr(filled_pdf_path = correct_answers_path, blank_template_path = blank_template_path, correct_answers_df = correct_answers_df, grid_params = grid_params, debug = TRUE, density = DENSITY)
+
+
+cat("\n=== Running OMR on student sheet ===\n")
+for (student_pdfs_path in student_pdfs_paths) {
+  student_results <- process_bubble_sheet_omr(
+    filled_pdf_path = student_pdfs_path,
+    blank_template_path = blank_template_path,
+    correct_answers_df = correct_answers_df,
+    grid_params = grid_params,
+    debug = TRUE,
+    density = DENSITY,
+    name_region = NAME_REGION,
+    id_region = ID_REGION,
+    partial_credit_mca = TRUE, max_debug_q = 25
+  )
+
+
+  # Test 4: Collate scores and write to output file
+  if (length(student_results$results_by_page) > 0 && !is.null(student_results$results_by_page[[1]])) {
+    cat("\n=== Processing and Saving Results ===\n")
+
+    # Use sapply to efficiently build a character vector of all lines to be written
+    lines_to_write <- sapply(student_results$results_by_page, function(page_result) {
+      # Also print a summary to the console for a quick overview
+      cat(sprintf(
+        "Page %d: Name: %s, ID: %s, Score: %d / %d\n",
+        page_result$page_number,
+        page_result$student_details$student_name,
+        page_result$student_details$student_id,
+        page_result$score,
+        page_result$total
+      ))
+
+      # Format a single tab-separated line for the output file
+      paste(
+        format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+        page_result$student_details$student_name,
+        page_result$student_details$student_id,
+        page_result$score,
+        paste(page_result$results$Student_Answer, collapse = "\t"),
+        sep = "\t"
+      )
+    })
+
+    # Append all new lines to the output file.
+    # `write` with ncolumns=1 writes each element of the vector on a new line.
+    write(lines_to_write, file = score_output_tsv, append = TRUE, ncolumns = 1)
+
+    cat(paste0("\nResults for ", length(student_results$results_by_page), " student(s) appended to '", score_output_tsv, "'\n"))
+  } else {
+    cat("No student pages were processed. Output file was not written.\n")
+  }
+}
+
+
+```
