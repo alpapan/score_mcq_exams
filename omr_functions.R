@@ -4,9 +4,11 @@ require(dplyr)
 require(tidyverse)
 require(stringr)
 require(reticulate)
-require(progress)
+
+
 reticulate::py_require("opencv-python")
 reticulate::py_require("numpy")
+
 
 Sys.setenv(MAGICK_MEMORY_LIMIT = "2GB")
 Sys.setenv(MAGICK_MAP_LIMIT = "4GB")
@@ -77,7 +79,7 @@ min_val, max_val, min_loc, top_left = cv2.minMaxLoc(res)
       },
       error = function(e) {
         if (debug) {
-          cat("Python error during orientation check:", e$message, "\n")
+          cat("\nPython error during orientation check:", e$message, "\n")
         }
         top_left_y <<- 0 # Default to no-flip
         match_confidence <<- 0
@@ -95,7 +97,7 @@ min_val, max_val, min_loc, top_left = cv2.minMaxLoc(res)
       if (debug) {
         cat(
           sprintf(
-            "Orientation anchor match confidence (%.2f) too low. Skipping rotation check.\n",
+            "\nOrientation anchor match confidence (%.2f) too low. Skipping rotation check.\n",
             match_confidence
           )
         )
@@ -108,7 +110,7 @@ min_val, max_val, min_loc, top_left = cv2.minMaxLoc(res)
       if (debug) {
         cat(
           sprintf(
-            "Anchor found at y=%d (page height=%d). Page appears flipped. Rotating...\n",
+            "\nAnchor found at y=%d (page height=%d). Page appears flipped. Rotating...\n",
             round(top_left_y),
             student_info$height
           )
@@ -120,7 +122,7 @@ min_val, max_val, min_loc, top_left = cv2.minMaxLoc(res)
       if (debug) {
         cat(
           sprintf(
-            "Anchor found at y=%d (page height=%d). Orientation appears correct.\n",
+            "\nAnchor found at y=%d (page height=%d). Orientation appears correct.\n",
             round(top_left_y),
             student_info$height
           )
@@ -477,7 +479,6 @@ calibrate_bubble_grid <- function(img, debug = FALSE, zoom = 2.0) {
   return(params)
 }
 
-
 is_bubble_filled <-
   function(filled_img,
            template_img,
@@ -631,13 +632,12 @@ _, _, _, top_left = cv2.minMaxLoc(res)
     )
     text(top_left[[1]], top_left[[2]] - 10, "Found Anchor", col = "red")
     dev.off() # Required to prevent plotting loops in RStudio viewer
-    image_write(student_img_viz, "debug_automated_alignment.png")
-    cat("Automated alignment visualization saved to debug_automated_alignment.png\n")
+    # image_write(student_img_viz, "debug_automated_alignment.png")
+    # cat("Automated alignment visualization saved to debug_automated_alignment.png\n")
   }
 
   return(list(dx = dx, dy = dy))
 }
-
 
 
 align_images <- function(img, template, debug = FALSE) {
@@ -883,7 +883,7 @@ detect_bubble_locations <- function(blank_template_path,
 
   # Add debug image saving
   if (debug) {
-    image_write(corrected_img, "debug_template_skewcorrected.png")
+    # image_write(corrected_img, "debug_template_skewcorrected.png")
   }
 
   # Step 2: OMR-based bubble detection
@@ -1392,16 +1392,27 @@ process_bubble_sheet_omr <- function(filled_pdf_path,
     } else {
       annotated_pages_list[[i]] <- page_to_annotate
     }
+
+
+    if (debug) {
+      cat("After loop, 'annotated_pages_list' has", length(annotated_pages_list), "elements.\n")
+      if (length(annotated_pages_list) > 0) {
+        first_item <- annotated_pages_list[[1]]
+        cat("First element in 'annotated_pages_list' (class:", class(first_item)[1], ", length:", length(first_item), ")\n")
+      }
+      check_combined <- image_join(annotated_pages_list)
+      cat("Combined 'final_image' object class:", class(check_combined)[1], " and its length (frames/pages):", length(check_combined), "\n")
+    }
   }
 
   # --- OUTPUT: Save annotated PDF and return results ---
   if (length(annotated_pages_list) > 0) {
     cat("\nFinalising and saving marked PDF...\n")
-    final_image <- do.call(c, annotated_pages_list)
+    final_image <- image_join(annotated_pages_list)
 
     # Apply compression settings to reduce file size
-    final_image <- image_strip(final_image) # Remove any extra profiles/metadata
-    final_image <- image_flatten(final_image) # Combine layers if any (might not affect single-frame PDFs much)
+    final_image <- image_convert(final_image, colorspace = "sRGB", depth = 8) # Explicitly set color space and depth
+    final_image <- image_strip(final_image) # Remove metadata to potentially reduce file size and simplify processing
 
     output_path <- sub("\\.pdf$", "_marked.pdf", filled_pdf_path, ignore.case = TRUE)
     # Use compression, quality, and density parameters for PDF output
@@ -1426,7 +1437,7 @@ process_bubble_sheet_omr <- function(filled_pdf_path,
   return(list(bubble_locations = bubble_locations, results_by_page = all_results))
 }
 
-
+############################################################
 
 apply_morphology <-
   function(binary_img,

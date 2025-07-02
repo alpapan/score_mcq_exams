@@ -7,6 +7,8 @@ require(stringr)
 require(tesseract)
 require(imager)
 require(grid)
+require(reticulate)
+
 
 Sys.setenv(MAGICK_MEMORY_LIMIT = "2GB")
 Sys.setenv(MAGICK_MAP_LIMIT = "4GB")
@@ -224,41 +226,21 @@ extract_student_info <-
     # Better preprocessing for name region
     name_processed <- name_crop %>%
       image_convert(colorspace = "gray") %>%
-      # image_resize("150%") %>% # Scale up first
+      image_deskew() %>% # Correct tilt in handwriting early
+      image_contrast(sharpen = 2) %>%
       image_normalize() %>% # Normalize contrast
-      image_threshold(threshold = "40%", type = "black") %>% # Binarize
-      image_morphology("close", "rectangle:2x2") %>% # Close gaps
-      image_despeckle()
-
-
-    # Process ID region - focus on making zeros look like zeros
-    # id_processed <- id_crop %>%
-    #   image_convert(colorspace = "gray") %>%
-    #   image_modulate(brightness = 110) %>%
-    #   image_contrast() %>%
-    #   image_enhance()
-    # Better preprocessing for ID region
-    id_processed <- id_crop %>%
-      image_convert(colorspace = "gray") %>%
-      image_resize("200%") %>% # Scale up more for small text
-      image_normalize() %>%
-      image_threshold(threshold = "35%", type = "black") %>%
-      image_morphology("open", "rectangle:1x1") %>% # Remove noise
-      image_morphology("close", "rectangle:2x2") %>% # Fill gaps
-      image_blur(radius = 0.3) # Slight blur to smooth edges
-
-
-    if (debug) {
-      image_write(id_processed, "debug_id_processed.png")
-    }
+      image_threshold(threshold = "80%", type = "black") %>%
+      image_median() %>%
+      image_trim(fuzz = 5) %>%
+      image_border("white", "10x10")
 
     # Extract text using OCR
     # name_text <- ocr(name_processed)
     name_text <-
-      ocr(name_processed, engine = tesseract(
+      ocr(name_processed, engine = tesseract("eng",
         options = list(
-          tessedit_char_whitelist = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz ='`.",
-          tessedit_pageseg_mode = 6
+          tessedit_char_whitelist = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz -'`.",
+          tessedit_pageseg_mode = 7
         ),
         cache = TRUE
       ))
@@ -267,27 +249,49 @@ extract_student_info <-
     student_name <-
       toupper(str_replace_all(name_text, "[^A-Za-z\\s\\-'\\.]", ""))
     student_name <-
-      str_squish(student_name) # This should preserve internal spaces
+      str_squish(student_name)
 
-    # id_text <- ocr(id_processed)
-    id_text <- ocr(id_processed, engine = tesseract(
+    # Process ID region - focus on making zeros look like zeros
+    id_processed <- id_crop %>%
+      image_convert(colorspace = "gray") %>%
+      image_deskew() %>% # Correct tilt in handwriting early
+      image_contrast(sharpen = 2) %>%
+      image_normalize() %>%
+      image_threshold(type = "black", threshold = "70%") %>%
+      image_median() %>% # Preserve text edges vs. despeckle's blurring
+      image_trim(fuzz = 5) %>%
+      image_border("white", "10x10")
+
+
+    if (debug) {
+      image_write(id_processed, "debug_id_processed.png")
+    }
+
+    # PSM 7 single text line
+    id_text <- ocr(id_processed, engine = tesseract("eng",
       options = list(
-        tessedit_char_whitelist = "0123456789",
-        tessedit_pageseg_mode = 8
+        tessedit_pageseg_mode = 7
       ),
       cache = TRUE
     ))
+    id_text <- str_squish(id_text)
+    # Fallback if PSM 7 yields a poor result (e.g. empty or mostly non-digits)
+    if (nchar(gsub("[^0-9]", "", id_text)) < 2) { # If extracted text has less than 2 digits
+      if (debug) {
+        cat("  Info: PSM 7 failed for ID ('", id_text, "'). Trying PSM 13\n")
+      }
+      id_text <- ocr(id_processed, engine = tesseract("eng",
+        options = list(
+          tessedit_pageseg_mode = 13
+        ),
+        cache = TRUE
+      ))
+    }
 
     # For ID processing, add character replacement just for common zero OCR errors
     # Ensure it's a single line and stripped of all whitespace
     student_id <- str_squish(gsub("\\s", "", id_text)) %>%
-      str_replace_all("O", "0") %>%
-      str_replace_all("D", "0") %>%
-      str_replace_all("C", "0") %>%
-      str_replace_all("c", "0") %>%
-      str_replace_all("&", "0") %>%
-      str_replace_all("o", "0") %>%
-      str_replace_all("e", "0")
+      str_replace_all("[ODCco]", "0")
 
     if (is.na(student_id)) {
       student_id <- "NOT FOUND"

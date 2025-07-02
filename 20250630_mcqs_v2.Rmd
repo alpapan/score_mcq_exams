@@ -20,11 +20,12 @@ correct_answers_path <- "analysis/MCQ_Answer_Sheet_Scan_CorrectAnswers.pdf"
 # student_pdfs_paths <- c("analysis/MCQ_Answer_Sheet_Scan_STUDENT_EXAMPLE2.pdf")
 student_pdfs_paths <-
   c(
-    "analysis/MCQ_1.pdf",
+    "analysis/MCQ_6.pdf",
     "analysis/MCQ_5.pdf",
     "analysis/MCQ_4.pdf",
     "analysis/MCQ_3.pdf",
-    "analysis/MCQ_2.pdf"
+    "analysis/MCQ_2.pdf",
+    "analysis/MCQ_1.pdf"
   )
 # student_pdfs_paths <- c("analysis/Failed_read.pdf")
 
@@ -89,6 +90,15 @@ student_details_region <-
     show_regions = TRUE
   )
 
+student_details_region <-
+  extract_student_info(
+    student_pdfs_paths[1],
+    debug = TRUE,
+    name_region = NAME_REGION,
+    id_region = ID_REGION,
+    density = DENSITY,
+    show_regions = TRUE
+  )
 
 
 ```
@@ -114,8 +124,15 @@ grid_params <- run_calibration(
   density = DENSITY
 )
 
+grid_paramsX <- run_calibration(
+  blank_template_path = student_pdfs_path,
+  grid_param_file = "analysis/grid_parameters2.rds",
+  density = DENSITY
+)
+
+
 cat("=== Running OMR on correct answers ===\n")
-correct_results <- process_bubble_sheet_omr(filled_pdf_path = correct_answers_path, blank_template_path = blank_template_path, correct_answers_df = correct_answers_df, grid_params = grid_params, debug = TRUE, density = DENSITY)
+correct_results <- process_bubble_sheet_omr(filled_pdf_path = correct_answers_path, blank_template_path = blank_template_path, correct_answers_df = correct_answers_df, grid_params = grid_params, debug = TRUE, density = DENSITY,threshold=50)
 
 
 cat("\n=== Running OMR on student sheet ===\n")
@@ -129,7 +146,7 @@ for (student_pdfs_path in student_pdfs_paths) {
     density = DENSITY,
     name_region = NAME_REGION,
     id_region = ID_REGION,
-    partial_credit_mca = TRUE, max_debug_q = 1
+    partial_credit_mca = TRUE, max_debug_q = 1,threshold=50
   )
 
 
@@ -141,7 +158,7 @@ for (student_pdfs_path in student_pdfs_paths) {
     lines_to_write <- sapply(student_results$results_by_page, function(page_result) {
       # Also print a summary to the console for a quick overview
       cat(sprintf(
-        "Page %d: Name: %s, ID: %s, Score: %f / %d\n",
+        "Page %d: Name: %s, ID: %s, Score: %.1f / %d\n",
         page_result$page_number,
         page_result$student_details$student_name,
         page_result$student_details$student_id,
